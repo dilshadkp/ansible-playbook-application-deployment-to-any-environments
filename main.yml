@@ -1,0 +1,133 @@
+---
+- name: "Deploy application"
+  hosts: "localhost"
+  vars_prompt:
+
+    - name: "accesskey"
+      prompt: "Enter Access Key for AWS access"
+      confirm: yes
+
+    - name: "secretkey"
+      prompt: "Enter Secret Key for AWS access"
+      confirm: yes
+
+    - name: "region"
+      prompt: "Enter AWS Region"
+      private: no
+
+    - name: "project"
+      prompt: "Enter Project Name"
+      private: no
+      confirm: yes
+
+    - name: "env"
+      prompt: "Enter the environment(stg/prod)"
+      private: no
+      confirm: yes
+
+    - name: "ssh_user"
+      prompt: "Enter SSH user of servers"
+      private: no
+
+    - name: "ssh_port"
+      prompt: "Enter SSH port of servers"
+      private: no
+
+    - name: "key_name"
+      prompt: "Enter the SSH key name(type without .pem extension)"
+      private: no
+
+###############################-FETCH DETAILS FROM AWS AND REGISTER TO VARIABLE-#####################################
+  tasks:
+    - name: "Fetch details Servers"  
+      ec2_instance_info:
+        aws_access_key: "{{accesskey}}"
+        aws_secret_key: "{{secretkey}}"
+        region: "{{region}}"
+        filters:
+          "tag:env": "{{env}}"
+          "tag:project": "{{project}}"
+      register: server_info
+###############################CREATE IN-MEMORY INVENTORY#####################################
+    - name: "Create in-memory inventory"
+      add_host:
+        groups: "server"
+        hostname: "{{ item.public_ip_address }}"
+        ansible_host: "{{ item.public_ip_address }}"
+        ansible_user: "{{ssh_user}}"
+        ansible_port: "{{ssh_port}}"
+        ansible_private_key_file: "{{key_name}}.pem"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+      with_items:
+        - "{{server_info.instances}}"
+
+#################################################DEPLOYMENT###############################################
+- name: "Deploy application to servers"
+  become: true
+  hosts: server
+  serial: 1
+  vars_prompt:	
+    - name: "git_url"
+      prompt: "Enter Git URL"
+      private: no
+
+  vars_files:
+    - variables.vars
+    
+  tasks:
+
+    - name: "Installing packages"
+      yum:
+        name:
+          - httpd
+          - git
+        state: present
+
+###############################CLONE APPLICATION FROM GITHUB#####################################
+    - name: "clone repository from Github"
+      git:
+        repo: "{{git_url}}"
+        dest: "{{clone_dir}}"
+      register: git_info
+######################OFF-LOAD INSTANCE FROM LB AND WAIT FOR CONNECTION DRAINING##################
+    - name: "off-load instance from loadbalancer"
+      when: git_info.changed == true
+      service:
+        name: httpd
+        state: stopped
+
+    - name: "wait for connection draining"
+      when: git_info.changed == true
+      pause:
+        seconds: "{{offload_wait}}"
+######################COPY CONTENT TO DOC ROOT AND LOAD INSTANCE TO LB###########################
+    - name: "copy contents to document root"
+      when: git_info.changed == true
+      copy:
+        src: "{{clone_dir}}"
+        dest: "{{doc_root}}"
+        owner: "{{owner}}"
+        group: "{{group}}"
+        remote_src: true 
+
+    - name: "Load instance back to loadbalancer"
+      when: git_info.changed == true
+      service:
+        name: httpd
+        state: restarted
+        enabled: true
+
+    - name: "wait for health check pass"
+      when: git_info.changed == true
+      pause:
+        seconds: "{{onload_wait}}"
+####################################PRINT SUCCESS MESSAGE#########################################
+    - name: "deployment status"
+      when: git_info.changed == false
+      debug:
+        msg: " {{ansible_hostname}} {{ansible_host}} already have the latest version"
+
+    - name: "deployment status 2"
+      when: git_info.changed == true
+      debug:
+        msg: " {{ansible_hostname}} {{ansible_host}} DEPLOYMENT SUCCESSFULL"
