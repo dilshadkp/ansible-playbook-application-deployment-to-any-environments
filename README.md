@@ -2,7 +2,9 @@
 
 ## Description
 
-This is an Ansible Playbook which can be used to deploy your application from GitHub to both staging and production environments in AWS.
+This is an Ansible Playbook to deploy your website from GitHub to both staging and production environments in AWS.
+
+![](https://i.ibb.co/stN9K4b/deployment.png)
 
 ## Features
 
