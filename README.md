@@ -62,10 +62,10 @@ This is an Ansible Playbook to deploy your website from GitHub to both staging a
           "tag:env": "{{env}}"
           "tag:project": "{{project}}"
       register: server_info
-      ```
+```
       
-  #### Task 2
-  >This task will create an in-memory inventory file with the details fetched from above task and ssh user, ssh port and ssh key name provided by you
+#### Task 2
+>This task will create an in-memory inventory file with the details fetched from above task and ssh user, ssh port and ssh key name provided by you
      
 ```python
     - name: "Create in-memory inventory"
